@@ -51,6 +51,8 @@ pub fn verify_message_circuit<F: RichField + Extendable<D>, const D: usize>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+    use log::info;
     use anyhow::Result;
     use plonky2::field::types::Sample;
     use plonky2::iop::witness::PartialWitness;
@@ -61,6 +63,18 @@ mod tests {
     use crate::curve::curve_types::CurveScalar;
     use crate::curve::ecdsa::{sign_message, ECDSAPublicKey, ECDSASecretKey, ECDSASignature};
 
+    macro_rules! measure_time {
+        ($anno:expr, $s:expr) => {
+            {
+                let start = Instant::now();
+                let anno = $anno();
+                let ret = $s;
+                info!("{} took {:?}", anno, start.elapsed());
+                ret 
+            }
+        };
+    }
+
     fn test_ecdsa_circuit_with_config(config: CircuitConfig) -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
@@ -69,7 +83,7 @@ mod tests {
         type Curve = Secp256K1;
 
         let pw = PartialWitness::new();
-        let mut builder = CircuitBuilder::<F, D>::new(config);
+        let mut builder = CircuitBuilder::<F, D>::new(config.clone());
 
         let msg = Secp256K1Scalar::rand();
         let msg_target = builder.constant_nonnative(msg);
@@ -93,19 +107,25 @@ mod tests {
 
         dbg!(builder.num_gates());
         let data = builder.build::<C>();
-        let proof = data.prove(pw).unwrap();
+        for (i, g) in data.common.gates.iter().enumerate() {
+            info!("gate {}: {:?}", i, g);
+        }
+        info!("degree: 2^{}={}", data.common.degree_bits(), data.common.degree());
+        let proof = measure_time!(|| format!("prove with {} wires", config.num_wires), data.prove(pw).unwrap());
         data.verify(proof)
     }
 
     #[test]
     #[ignore]
     fn test_ecdsa_circuit_narrow() -> Result<()> {
+        env_logger::init();
         test_ecdsa_circuit_with_config(CircuitConfig::standard_ecc_config())
     }
 
     #[test]
     #[ignore]
     fn test_ecdsa_circuit_wide() -> Result<()> {
+        env_logger::init();
         test_ecdsa_circuit_with_config(CircuitConfig::wide_ecc_config())
     }
 }
